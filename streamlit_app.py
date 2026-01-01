@@ -1,4 +1,3 @@
-from nltk.tokenize import word_tokenize
 import streamlit as st
 import pandas as pd
 import re
@@ -22,8 +21,40 @@ except Exception:
     _stemmer = None
     _stopremover = None
 
+# NLTK setup with caching - try to download resources
 import nltk
-nltk.download('punkt', quiet=True)
+
+
+@st.cache_resource
+def setup_nltk():
+    try:
+        nltk.download('punkt', quiet=True)
+        nltk.download('stopwords', quiet=True)
+        return True
+    except Exception as e:
+        st.warning(f'NLTK data setup warning: {str(e)[:50]}')
+        return False
+
+
+_nltk_ready = setup_nltk()
+
+# Simple tokenizer fallback (split by whitespace)
+
+
+def simple_tokenize(text):
+    """Simple tokenization by whitespace - fallback when NLTK is unavailable"""
+    return text.split()
+
+# Tokenizer wrapper with fallback
+
+
+def safe_tokenize(text):
+    """Try NLTK tokenization, fall back to simple split"""
+    try:
+        from nltk.tokenize import word_tokenize
+        return word_tokenize(text)
+    except Exception:
+        return simple_tokenize(text)
 
 # Preprocessing functions (same logic as notebook)
 
@@ -43,9 +74,13 @@ def remove_stopwords(text):
     if _sastrawi_available and _stopremover is not None:
         return _stopremover.remove(text)
     # fallback: basic heuristic remove common short words
-    tokens = word_tokenize(text)
-    stopwords = set([w for w in nltk.corpus.stopwords.words(
-        'indonesian')]) if 'indonesian' in nltk.corpus.stopwords.fileids() else set()
+    tokens = safe_tokenize(text)
+    # Try to get Indonesian stopwords, fallback to simple common words
+    try:
+        stopwords = set(nltk.corpus.stopwords.words('indonesian'))
+    except Exception:
+        stopwords = set(['dan', 'yang', 'di', 'ke', 'dari', 'untuk', 'dengan',
+                        'atau', 'pada', 'tidak', 'ini', 'itu', 'adalah', 'ada'])
     if stopwords:
         return ' '.join([t for t in tokens if t not in stopwords])
     return ' '.join(tokens)
@@ -53,9 +88,9 @@ def remove_stopwords(text):
 
 def stem_text(text):
     if _sastrawi_available and _stemmer is not None:
-        tokens = word_tokenize(text)
+        tokens = safe_tokenize(text)
         return ' '.join([_stemmer.stem(t) for t in tokens])
-    return text
+    return text  # no stemming fallback available
 
 
 def full_preprocess(text):
